@@ -8,7 +8,6 @@ class Citrusglaze < Formula
     url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.0/citrusglaze-v0.1.0-darwin-arm64.tar.gz"
     sha256 "d2479cbda8f8d552312dfb8eec92fbe63791ae54715e986d443140587fbd8dc3"
   else
-    # Intel builds will be added when CI produces them
     odie "CitrusGlaze currently only supports Apple Silicon (arm64)"
   end
 
@@ -16,10 +15,8 @@ class Citrusglaze < Formula
     bin.install "citrusglaze"
     bin.install "citrusglazed"
 
-    # Install uninstall helper
     (bin/"citrusglaze-brew-cleanup").write <<~BASH
       #!/bin/bash
-      # Run BEFORE `brew uninstall citrusglaze`
       if command -v citrusglaze &>/dev/null; then
         echo "yes" | citrusglaze uninstall
       else
@@ -37,19 +34,43 @@ class Citrusglaze < Formula
   def post_install
     (var/"log/citrusglaze").mkpath
     (var/"run/citrusglaze").mkpath
+
+    # Auto-run setup: dirs, CA cert, config, policies, daemon, proxy.
+    # Fully non-interactive. Idempotent (safe to re-run).
+    # --skip-trust avoids macOS Keychain dialog during brew install.
+    ohai "Running CitrusGlaze setup..."
+    system bin/"citrusglaze", "setup", "--skip-trust"
+
+    # Install CA to login keychain (no admin password needed).
+    ca_pem = "#{Dir.home}/Library/Application Support/citrusglaze/ca.pem"
+    alt_ca = "#{Dir.home}/.local/share/citrusglaze/ca.pem"
+    cert = File.exist?(ca_pem) ? ca_pem : (File.exist?(alt_ca) ? alt_ca : nil)
+    if cert
+      ohai "Installing CA to login keychain (may prompt for password)..."
+      system "security", "add-trusted-cert", "-r", "trustRoot",
+             "-k", "#{Dir.home}/Library/Keychains/login.keychain-db", cert
+    end
   end
 
   def caveats
     <<~EOS
-      To complete setup, run:
-        citrusglaze setup
+      CitrusGlaze is installed and running!
 
-      To start as a background service:
+      Verify:
+        citrusglaze status
+
+      Protect an AI tool:
+        citrusglaze wrap claude
+        citrusglaze wrap python my_agent.py
+
+      Start on login:
         brew services start citrusglaze
 
-      Before uninstalling:
-        citrusglaze-brew-cleanup
-        brew uninstall citrusglaze
+      Search all AI conversations (add to .mcp.json):
+        {"mcpServers":{"citrusglaze-recall":{"command":"citrusglaze","args":["mcp-server"]}}}
+
+      Uninstall:
+        citrusglaze-brew-cleanup && brew uninstall citrusglaze
     EOS
   end
 
