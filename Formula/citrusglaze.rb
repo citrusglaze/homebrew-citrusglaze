@@ -1,12 +1,12 @@
 class Citrusglaze < Formula
   desc "AI Security & Observability Platform — MITM proxy for AI API calls"
   homepage "https://github.com/citrusglaze/citrusglaze"
-  version "0.1.0-beta"
+  version "0.1.3-beta"
   license "FSL-1.1-ALv2"
 
   if Hardware::CPU.arm?
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.0-beta/citrusglaze-v0.1.0-beta-darwin-arm64.tar.gz"
-    sha256 "6c07421420b9ba7207343f5bff630a636da34929e00f80e6978aeddead2716e7"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.3-beta/citrusglaze-v0.1.3-beta-darwin-arm64.tar.gz"
+    sha256 "e23e0d6a64b13607da98976ca8c2d754548dc20be4055932665afc54de7ce3f5"
   else
     odie "CitrusGlaze currently only supports Apple Silicon (arm64)"
   end
@@ -37,18 +37,23 @@ class Citrusglaze < Formula
 
     # Auto-run setup: dirs, CA cert, config, policies, daemon, proxy.
     # Fully non-interactive. Idempotent (safe to re-run).
-    # --skip-trust avoids macOS Keychain dialog during brew install.
+    # --headless skips osascript admin prompts and CA trust installation.
     ohai "Running CitrusGlaze setup..."
-    system bin/"citrusglaze", "setup", "--skip-trust"
+    system bin/"citrusglaze", "setup", "--headless"
 
     # Install CA to login keychain (no admin password needed).
+    # May fail silently in headless/CI environments — user can run manually.
     ca_pem = "#{Dir.home}/Library/Application Support/citrusglaze/ca.pem"
     alt_ca = "#{Dir.home}/.local/share/citrusglaze/ca.pem"
     cert = File.exist?(ca_pem) ? ca_pem : (File.exist?(alt_ca) ? alt_ca : nil)
     if cert
-      ohai "Installing CA to login keychain (may prompt for password)..."
-      system "security", "add-trusted-cert", "-r", "trustRoot",
-             "-k", "#{Dir.home}/Library/Keychains/login.keychain-db", cert
+      ohai "Installing CA to login keychain..."
+      begin
+        system "security", "add-trusted-cert", "-r", "trustRoot",
+               "-k", "#{Dir.home}/Library/Keychains/login.keychain-db", cert
+      rescue
+        opoo "CA certificate installation skipped (run manually: security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db '#{cert}')"
+      end
     end
   end
 
