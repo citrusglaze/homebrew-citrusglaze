@@ -6,7 +6,7 @@ class Citrusglaze < Formula
 
   if Hardware::CPU.arm?
     url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.7-beta/citrusglaze-v0.1.7-beta-darwin-arm64.tar.gz"
-    sha256 "4861f271659903297e18ebd7073bcb7d961239c4272d96264c7ed2fd099dbc2e"
+    sha256 "0b63a6a9af5c6ac7bf4d342eb3bdd216d6817f2d27c5244309913593ae045b3f"
   else
     odie "CitrusGlaze currently only supports Apple Silicon (arm64)"
   end
@@ -21,11 +21,6 @@ class Citrusglaze < Formula
     bin.install "citrusglaze"
     bin.install "citrusglazed"
 
-    # Install the desktop app to /Applications
-    resource("app").stage do
-      (prefix/"CitrusGlaze.app").install Dir["CitrusGlaze.app/*"]
-    end
-
     (bin/"citrusglaze-brew-cleanup").write <<~BASH
       #!/bin/bash
       if command -v citrusglaze &>/dev/null; then
@@ -37,7 +32,7 @@ class Citrusglaze < Formula
           [ -f "$plist" ] && launchctl unload "$plist" 2>/dev/null && rm -f "$plist"
         done
       fi
-      rm -f /Applications/CitrusGlaze.app 2>/dev/null || true
+      rm -rf /Applications/CitrusGlaze.app 2>/dev/null || true
       echo "Cleanup complete. Now run: brew uninstall citrusglaze"
     BASH
     (bin/"citrusglaze-brew-cleanup").chmod 0755
@@ -47,28 +42,46 @@ class Citrusglaze < Formula
     (var/"log/citrusglaze").mkpath
     (var/"run/citrusglaze").mkpath
 
-    # Copy the .app into /Applications so it shows up in Spotlight/Launchpad
-    app_source = prefix/"CitrusGlaze.app"
+    # ── Install .app to /Applications ──
     app_dest = Pathname.new("/Applications/CitrusGlaze.app")
-    if app_source.exist?
-      ohai "Installing CitrusGlaze.app to /Applications..."
-      FileUtils.rm_rf(app_dest) if app_dest.exist?
-      FileUtils.cp_r(app_source, app_dest)
-      # Register with Launch Services so it appears in Spotlight immediately
-      system "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister", "-f", app_dest.to_s
+    FileUtils.rm_rf(app_dest) if app_dest.exist?
+
+    # Download and extract the .app.zip resource
+    resource("app").stage do
+      staged_app = Pathname.pwd/"CitrusGlaze.app"
+      if staged_app.exist?
+        ohai "Installing CitrusGlaze.app to /Applications..."
+        FileUtils.cp_r(staged_app, app_dest)
+      else
+        # The zip might extract without the .app wrapper — look for Contents/
+        staged_contents = Pathname.pwd/"Contents"
+        if staged_contents.exist?
+          ohai "Installing CitrusGlaze.app to /Applications..."
+          FileUtils.mkdir_p(app_dest)
+          FileUtils.cp_r(staged_contents, app_dest/"Contents")
+        else
+          opoo "Could not find CitrusGlaze.app in downloaded archive. Contents: #{Dir.entries(Pathname.pwd).join(', ')}"
+        end
+      end
     end
 
-    # Run setup interactively — generates CA, trusts it, starts daemon,
-    # configures system proxy (Touch ID prompt), installs launchd agent.
-    # Safe to re-run (idempotent — skips steps already done).
+    if app_dest.exist? && (app_dest/"Contents/MacOS/citrusglaze-app").exist?
+      ohai "Desktop app installed successfully"
+      # Register with Launch Services so it appears in Spotlight immediately
+      system "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister", "-f", app_dest.to_s
+    else
+      opoo "Desktop app installation may have failed — check /Applications/CitrusGlaze.app"
+      opoo "You can manually download from: https://github.com/citrusglaze/citrusglaze/releases"
+    end
+
+    # ── Run setup wizard ──
     ohai "Running CitrusGlaze setup..."
     ohai "You may see a Touch ID / password prompt to trust the CA certificate and set the system proxy."
     system bin/"citrusglaze", "setup"
 
-    # Launch the desktop app (menu bar icon + dashboard)
-    app_dest = Pathname.new("/Applications/CitrusGlaze.app")
-    if app_dest.exist?
-      ohai "Launching CitrusGlaze desktop app..."
+    # ── Launch the desktop app ──
+    if app_dest.exist? && (app_dest/"Contents/MacOS/citrusglaze-app").exist?
+      ohai "Launching CitrusGlaze..."
       system "open", app_dest.to_s
     end
   end
@@ -79,7 +92,7 @@ class Citrusglaze < Formula
         citrusglaze status
 
       Desktop app installed to /Applications/CitrusGlaze.app
-      Open it from Spotlight or Launchpad.
+      Open it from Spotlight, Launchpad, or: open /Applications/CitrusGlaze.app
 
       If setup was interrupted or you skipped a prompt, re-run:
         citrusglaze setup
@@ -88,7 +101,7 @@ class Citrusglaze < Formula
         citrusglaze wrap claude
         citrusglaze wrap python my_agent.py
 
-      Start on login:
+      Start daemon on login:
         brew services start citrusglaze
 
       Search all AI conversations (add to .mcp.json):
