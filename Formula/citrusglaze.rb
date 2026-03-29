@@ -64,6 +64,13 @@ class Citrusglaze < Formula
     ohai "Running CitrusGlaze setup..."
     ohai "You may see a Touch ID / password prompt to trust the CA certificate and set the system proxy."
     system bin/"citrusglaze", "setup"
+
+    # Launch the desktop app (menu bar icon + dashboard)
+    app_dest = Pathname.new("/Applications/CitrusGlaze.app")
+    if app_dest.exist?
+      ohai "Launching CitrusGlaze desktop app..."
+      system "open", app_dest.to_s
+    end
   end
 
   def caveats
