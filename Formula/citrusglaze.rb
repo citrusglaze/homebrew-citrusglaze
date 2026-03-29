@@ -47,12 +47,15 @@ class Citrusglaze < Formula
     (var/"log/citrusglaze").mkpath
     (var/"run/citrusglaze").mkpath
 
-    # Symlink the .app into /Applications so it shows up in Spotlight/Launchpad
+    # Copy the .app into /Applications so it shows up in Spotlight/Launchpad
     app_source = prefix/"CitrusGlaze.app"
     app_dest = Pathname.new("/Applications/CitrusGlaze.app")
-    if app_source.exist? && !app_dest.exist?
+    if app_source.exist?
       ohai "Installing CitrusGlaze.app to /Applications..."
-      FileUtils.ln_sf(app_source, app_dest)
+      FileUtils.rm_rf(app_dest) if app_dest.exist?
+      FileUtils.cp_r(app_source, app_dest)
+      # Register with Launch Services so it appears in Spotlight immediately
+      system "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister", "-f", app_dest.to_s
     end
 
     # Run setup interactively — generates CA, trusts it, starts daemon,
