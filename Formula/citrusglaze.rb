@@ -1,6 +1,6 @@
 class Citrusglaze < Formula
   desc "AI Security & Observability Platform — MITM proxy for AI API calls"
-  homepage "https://github.com/citrusglaze/citrusglaze"
+  homepage "https://citrusglaze.dev"
   version "0.1.7-beta"
   license "FSL-1.1-ALv2"
 
@@ -35,34 +35,21 @@ class Citrusglaze < Formula
     (var/"log/citrusglaze").mkpath
     (var/"run/citrusglaze").mkpath
 
-    # Auto-run setup: dirs, CA cert, config, policies, daemon, proxy.
-    # Fully non-interactive. Idempotent (safe to re-run).
-    # --headless skips osascript admin prompts and CA trust installation.
+    # Run setup interactively — generates CA, trusts it, starts daemon,
+    # configures system proxy (Touch ID prompt), installs launchd agent.
+    # Safe to re-run (idempotent — skips steps already done).
     ohai "Running CitrusGlaze setup..."
-    system bin/"citrusglaze", "setup", "--headless"
-
-    # Install CA to login keychain (no admin password needed).
-    # May fail silently in headless/CI environments — user can run manually.
-    ca_pem = "#{Dir.home}/Library/Application Support/citrusglaze/ca.pem"
-    alt_ca = "#{Dir.home}/.local/share/citrusglaze/ca.pem"
-    cert = File.exist?(ca_pem) ? ca_pem : (File.exist?(alt_ca) ? alt_ca : nil)
-    if cert
-      ohai "Installing CA to login keychain..."
-      begin
-        system "security", "add-trusted-cert", "-r", "trustRoot",
-               "-k", "#{Dir.home}/Library/Keychains/login.keychain-db", cert
-      rescue
-        opoo "CA certificate installation skipped (run manually: security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db '#{cert}')"
-      end
-    end
+    ohai "You may see a Touch ID / password prompt to trust the CA certificate and set the system proxy."
+    system bin/"citrusglaze", "setup"
   end
 
   def caveats
     <<~EOS
-      CitrusGlaze is installed and running!
-
-      Verify:
+      Setup complete! Verify with:
         citrusglaze status
+
+      If setup was interrupted or you skipped a prompt, re-run:
+        citrusglaze setup
 
       Protect an AI tool:
         citrusglaze wrap claude
