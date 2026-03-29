@@ -11,9 +11,20 @@ class Citrusglaze < Formula
     odie "CitrusGlaze currently only supports Apple Silicon (arm64)"
   end
 
+  # Desktop app (.app bundle) — downloaded separately and installed to /Applications
+  resource "app" do
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.7-beta/CitrusGlaze-v0.1.7-beta-darwin-arm64.app.zip"
+    sha256 "60e738fe9bdfc100eceec4a7d8db4b082267edbb52b8c03bc0e7af1dfe50c05a"
+  end
+
   def install
     bin.install "citrusglaze"
     bin.install "citrusglazed"
+
+    # Install the desktop app to /Applications
+    resource("app").stage do
+      (prefix/"CitrusGlaze.app").install Dir["CitrusGlaze.app/*"]
+    end
 
     (bin/"citrusglaze-brew-cleanup").write <<~BASH
       #!/bin/bash
@@ -26,6 +37,7 @@ class Citrusglaze < Formula
           [ -f "$plist" ] && launchctl unload "$plist" 2>/dev/null && rm -f "$plist"
         done
       fi
+      rm -f /Applications/CitrusGlaze.app 2>/dev/null || true
       echo "Cleanup complete. Now run: brew uninstall citrusglaze"
     BASH
     (bin/"citrusglaze-brew-cleanup").chmod 0755
@@ -34,6 +46,14 @@ class Citrusglaze < Formula
   def post_install
     (var/"log/citrusglaze").mkpath
     (var/"run/citrusglaze").mkpath
+
+    # Symlink the .app into /Applications so it shows up in Spotlight/Launchpad
+    app_source = prefix/"CitrusGlaze.app"
+    app_dest = Pathname.new("/Applications/CitrusGlaze.app")
+    if app_source.exist? && !app_dest.exist?
+      ohai "Installing CitrusGlaze.app to /Applications..."
+      FileUtils.ln_sf(app_source, app_dest)
+    end
 
     # Run setup interactively — generates CA, trusts it, starts daemon,
     # configures system proxy (Touch ID prompt), installs launchd agent.
@@ -47,6 +67,9 @@ class Citrusglaze < Formula
     <<~EOS
       Setup complete! Verify with:
         citrusglaze status
+
+      Desktop app installed to /Applications/CitrusGlaze.app
+      Open it from Spotlight or Launchpad.
 
       If setup was interrupted or you skipped a prompt, re-run:
         citrusglaze setup
