@@ -35,6 +35,21 @@ class Citrusglaze < Formula
       end
     end
 
+    # Download and extract Chrome extension to a well-known location
+    # so users can "Load unpacked" once, then just hit Refresh on upgrades.
+    ext_zip = "citrusglaze-extension-v0.1.2.4.zip"
+    ext_url = "https://github.com/citrusglaze/citrusglaze/releases/download/v#{version}/#{ext_zip}"
+    ext_dir = "#{Dir.home}/Library/Application Support/citrusglaze/chrome-extension"
+    system "curl", "-fsSL", "-o", "#{buildpath}/#{ext_zip}", ext_url
+    system "rm", "-rf", ext_dir
+    system "mkdir", "-p", ext_dir
+    system "unzip", "-q", "-o", "#{buildpath}/#{ext_zip}", "-d", ext_dir
+    # If the zip contains a dist/ subfolder, flatten it
+    if File.directory?("#{ext_dir}/dist")
+      system "cp", "-R", *Dir["#{ext_dir}/dist/*"], ext_dir
+      system "rm", "-rf", "#{ext_dir}/dist"
+    end
+
     (bin/"citrusglaze-brew-cleanup").write <<~BASH
       #!/bin/bash
       if command -v citrusglaze &>/dev/null; then
@@ -135,6 +150,11 @@ class Citrusglaze < Formula
 
       Desktop app installed to /Applications/CitrusGlaze.app
       Open it from Spotlight, Launchpad, or: open /Applications/CitrusGlaze.app
+
+      Chrome extension extracted to:
+        ~/Library/Application Support/citrusglaze/chrome-extension
+      Load it once: Chrome → Extensions → Load unpacked → select that folder
+      On upgrades, just click Refresh on the extension card.
 
       If setup was interrupted or you skipped a prompt, re-run:
         citrusglaze setup
