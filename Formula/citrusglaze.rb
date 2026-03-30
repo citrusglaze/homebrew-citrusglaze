@@ -102,10 +102,24 @@ class Citrusglaze < Formula
     system "launchctl", "unsetenv", "HTTPS_PROXY"
     system "launchctl", "unsetenv", "HTTP_PROXY"
 
-    # Run setup wizard (interactive — Touch ID prompts for CA + proxy)
+    # Run setup wizard in headless mode first (dirs, CA gen, config, policies, daemon, proxy)
+    # Then do the CA trust ourselves since osascript doesn't work inside brew post_install.
     ohai "Running CitrusGlaze setup..."
-    ohai "You may see a Touch ID / password prompt to trust the CA certificate and set the system proxy."
-    system bin/"citrusglaze", "setup"
+    system bin/"citrusglaze", "setup", "--headless"
+
+    # Install CA to login keychain (no admin password needed — works non-interactively)
+    ca_pem = "#{Dir.home}/Library/Application Support/citrusglaze/ca.pem"
+    alt_ca = "#{Dir.home}/.local/share/citrusglaze/ca.pem"
+    cert = File.exist?(ca_pem) ? ca_pem : (File.exist?(alt_ca) ? alt_ca : nil)
+    if cert
+      ohai "Installing CA certificate to login keychain..."
+      system "security", "add-trusted-cert", "-r", "trustRoot",
+             "-k", "#{Dir.home}/Library/Keychains/login.keychain-db", cert
+    end
+
+    # Set system proxy (PAC) — this needs admin but we try without osascript
+    ohai "To complete setup (system proxy + System Keychain CA), run in a terminal:"
+    ohai "  citrusglaze setup"
 
     # Launch the desktop app
     if app_dest.exist?
