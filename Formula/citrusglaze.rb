@@ -11,15 +11,29 @@ class Citrusglaze < Formula
     odie "CitrusGlaze currently only supports Apple Silicon (arm64)"
   end
 
-  # Desktop app (.app bundle) — downloaded separately and installed to /Applications
-  resource "app" do
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.8-beta/CitrusGlaze-v0.1.8-beta-darwin-arm64.app.zip"
-    sha256 "30e1f37ba03aeed06c9752fc152962c3cdbecefec82b05e6a288bbbd2ec29402"
-  end
-
   def install
     bin.install "citrusglaze"
     bin.install "citrusglazed"
+
+    # Download and extract the desktop app during install (not post_install)
+    app_zip = "CitrusGlaze-v#{version}-darwin-arm64.app.zip"
+    app_url = "https://github.com/citrusglaze/citrusglaze/releases/download/v#{version}/#{app_zip}"
+    system "curl", "-fsSL", "-o", "#{buildpath}/#{app_zip}", app_url
+    system "unzip", "-q", "#{buildpath}/#{app_zip}", "-d", "#{buildpath}/app"
+
+    # Store the .app in the Cellar so post_install can copy to /Applications
+    app_staged = buildpath/"app/CitrusGlaze.app"
+    if app_staged.exist?
+      (prefix/"CitrusGlaze.app").install Dir[app_staged/"*"]
+    else
+      # Fallback: zip extracted Contents/ directly
+      contents_staged = buildpath/"app/Contents"
+      if contents_staged.exist?
+        (prefix/"CitrusGlaze.app/Contents").install Dir[contents_staged/"*"]
+      else
+        opoo "Could not find CitrusGlaze.app in archive"
+      end
+    end
 
     (bin/"citrusglaze-brew-cleanup").write <<~BASH
       #!/bin/bash
@@ -42,45 +56,30 @@ class Citrusglaze < Formula
     (var/"log/citrusglaze").mkpath
     (var/"run/citrusglaze").mkpath
 
-    # ── Install .app to /Applications ──
+    # Copy .app from Cellar to /Applications
+    app_source = prefix/"CitrusGlaze.app"
     app_dest = Pathname.new("/Applications/CitrusGlaze.app")
-    FileUtils.rm_rf(app_dest) if app_dest.exist?
 
-    # Download and extract the .app.zip resource
-    resource("app").stage do
-      staged_app = Pathname.pwd/"CitrusGlaze.app"
-      if staged_app.exist?
-        ohai "Installing CitrusGlaze.app to /Applications..."
-        FileUtils.cp_r(staged_app, app_dest)
-      else
-        # The zip might extract without the .app wrapper — look for Contents/
-        staged_contents = Pathname.pwd/"Contents"
-        if staged_contents.exist?
-          ohai "Installing CitrusGlaze.app to /Applications..."
-          FileUtils.mkdir_p(app_dest)
-          FileUtils.cp_r(staged_contents, app_dest/"Contents")
-        else
-          opoo "Could not find CitrusGlaze.app in downloaded archive. Contents: #{Dir.entries(Pathname.pwd).join(', ')}"
-        end
-      end
-    end
+    if app_source.exist? && (app_source/"Contents/MacOS/citrusglaze-app").exist?
+      FileUtils.rm_rf(app_dest) if app_dest.exist?
+      ohai "Installing CitrusGlaze.app to /Applications..."
+      FileUtils.cp_r(app_source, app_dest)
 
-    if app_dest.exist? && (app_dest/"Contents/MacOS/citrusglaze-app").exist?
-      ohai "Desktop app installed successfully"
-      # Register with Launch Services so it appears in Spotlight immediately
+      # Register with Launch Services so it appears in Spotlight
       system "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister", "-f", app_dest.to_s
+      ohai "Desktop app installed"
     else
-      opoo "Desktop app installation may have failed — check /Applications/CitrusGlaze.app"
-      opoo "You can manually download from: https://github.com/citrusglaze/citrusglaze/releases"
+      opoo "Desktop app not found in Cellar — download manually from:"
+      opoo "  https://github.com/citrusglaze/citrusglaze/releases/latest"
     end
 
-    # ── Run setup wizard ──
+    # Run setup wizard (interactive — Touch ID prompts for CA + proxy)
     ohai "Running CitrusGlaze setup..."
     ohai "You may see a Touch ID / password prompt to trust the CA certificate and set the system proxy."
     system bin/"citrusglaze", "setup"
 
-    # ── Launch the desktop app ──
-    if app_dest.exist? && (app_dest/"Contents/MacOS/citrusglaze-app").exist?
+    # Launch the desktop app
+    if app_dest.exist?
       ohai "Launching CitrusGlaze..."
       system "open", app_dest.to_s
     end
