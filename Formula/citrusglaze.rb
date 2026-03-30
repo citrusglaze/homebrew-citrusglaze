@@ -1,12 +1,12 @@
 class Citrusglaze < Formula
   desc "AI Security & Observability Platform — MITM proxy for AI API calls"
   homepage "https://citrusglaze.dev"
-  version "0.1.8-beta"
+  version "0.1.9-beta"
   license "FSL-1.1-ALv2"
 
   if Hardware::CPU.arm?
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.8-beta/citrusglaze-v0.1.8-beta-darwin-arm64.tar.gz"
-    sha256 "a83556c0bd9a57130290aff0fcea419cff05ab49b290db28d30e0ddeb7258769"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.9-beta/citrusglaze-v0.1.9-beta-darwin-arm64.tar.gz"
+    sha256 "b7251575373be342b667175db8bc3c14890e965d49795452f3af6759329da0c3"
   else
     odie "CitrusGlaze currently only supports Apple Silicon (arm64)"
   end
