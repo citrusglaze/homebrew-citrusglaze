@@ -78,6 +78,30 @@ class Citrusglaze < Formula
       opoo "  https://github.com/citrusglaze/citrusglaze/releases/latest"
     end
 
+    # ── Remove toxic HTTPS_PROXY/HTTP_PROXY from shell profiles ──
+    # Old versions of citrusglaze setup injected these, which breaks Claude Code.
+    # Do this in the formula directly so it happens even if setup errors out.
+    for profile in [
+      "#{Dir.home}/.zshrc",
+      "#{Dir.home}/.bashrc",
+      "#{Dir.home}/.bash_profile",
+    ]
+      next unless File.exist?(profile)
+      content = File.read(profile)
+      next unless content.include?("CitrusGlaze: HTTPS_PROXY") || content.include?("CitrusGlaze: HTTP_PROXY")
+      ohai "Removing stale HTTPS_PROXY/HTTP_PROXY from #{profile}..."
+      cleaned = content.lines.reject { |l|
+        l.include?("CitrusGlaze: HTTPS_PROXY") ||
+        l.include?("CitrusGlaze: HTTP_PROXY") ||
+        (l.strip.start_with?("export HTTPS_PROXY=") && content.include?("CitrusGlaze: HTTPS_PROXY")) ||
+        (l.strip.start_with?("export HTTP_PROXY=") && content.include?("CitrusGlaze: HTTP_PROXY"))
+      }.join
+      File.write(profile, cleaned)
+    end
+    # Also clear from current session's launchctl
+    system "launchctl", "unsetenv", "HTTPS_PROXY"
+    system "launchctl", "unsetenv", "HTTP_PROXY"
+
     # Run setup wizard (interactive — Touch ID prompts for CA + proxy)
     ohai "Running CitrusGlaze setup..."
     ohai "You may see a Touch ID / password prompt to trust the CA certificate and set the system proxy."
