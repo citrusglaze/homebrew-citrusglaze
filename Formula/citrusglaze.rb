@@ -61,13 +61,18 @@ class Citrusglaze < Formula
     app_dest = Pathname.new("/Applications/CitrusGlaze.app")
 
     if app_source.exist? && (app_source/"Contents/MacOS/citrusglaze-app").exist?
-      FileUtils.rm_rf(app_dest) if app_dest.exist?
       ohai "Installing CitrusGlaze.app to /Applications..."
-      FileUtils.cp_r(app_source, app_dest)
+      system "rm", "-rf", app_dest.to_s
+      system "cp", "-R", app_source.to_s, app_dest.to_s
 
-      # Register with Launch Services so it appears in Spotlight
-      system "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister", "-f", app_dest.to_s
-      ohai "Desktop app installed"
+      if app_dest.exist?
+        # Register with Launch Services so it appears in Spotlight
+        system "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister", "-f", app_dest.to_s
+        ohai "Desktop app installed to /Applications"
+      else
+        opoo "Failed to copy app to /Applications. Run manually:"
+        opoo "  cp -R #{app_source} /Applications/"
+      end
     else
       opoo "Desktop app not found in Cellar — download manually from:"
       opoo "  https://github.com/citrusglaze/citrusglaze/releases/latest"
