@@ -65,11 +65,11 @@ class Citrusglaze < Formula
       }.join
       File.write(profile, cleaned)
     end
-    system "launchctl", "unsetenv", "HTTPS_PROXY"
-    system "launchctl", "unsetenv", "HTTP_PROXY"
+    quiet_system "launchctl", "unsetenv", "HTTPS_PROXY"
+    quiet_system "launchctl", "unsetenv", "HTTP_PROXY"
 
     # ── Stop any old daemon before starting the service ──
-    system "pkill", "-f", "citrusglazed"
+    quiet_system "pkill", "-f", "citrusglazed"
     5.times do
       break unless quiet_system("pgrep", "-qf", "citrusglazed")
       sleep 1
@@ -89,8 +89,9 @@ class Citrusglaze < Formula
     cert = File.exist?(ca_pem) ? ca_pem : (File.exist?(alt_ca) ? alt_ca : nil)
     if cert
       ohai "Installing CA certificate to login keychain..."
-      if system "security", "add-trusted-cert", "-r", "trustRoot",
-                "-k", "#{Dir.home}/Library/Keychains/login.keychain-db", cert
+      # quiet_system so a failure doesn't abort post_install
+      if quiet_system "security", "add-trusted-cert", "-r", "trustRoot",
+                      "-k", "#{Dir.home}/Library/Keychains/login.keychain-db", cert
         ohai "CA certificate installed successfully"
       else
         opoo "CA certificate installation failed. Run manually:"
@@ -102,7 +103,7 @@ class Citrusglaze < Formula
 
     # ── Start daemon via brew services (proper launchd, survives post_install sandbox) ──
     ohai "Starting CitrusGlaze daemon..."
-    system "brew", "services", "start", "citrusglaze/citrusglaze/citrusglaze"
+    quiet_system "brew", "services", "start", "citrusglaze/citrusglaze/citrusglaze"
 
     # Wait for daemon to be ready
     ready = false
@@ -122,7 +123,7 @@ class Citrusglaze < Formula
       iface = `networksetup -listallnetworkservices 2>/dev/null`.lines
                 .reject { |l| l.start_with?("An asterisk") || l.strip.empty? }
                 .map(&:strip).first || "Wi-Fi"
-      if system "networksetup", "-setautoproxyurl", iface, pac_url
+      if quiet_system "networksetup", "-setautoproxyurl", iface, pac_url
         ohai "PAC proxy configured on #{iface} → #{pac_url}"
       else
         ohai "To configure system proxy, run: citrusglaze setup"
