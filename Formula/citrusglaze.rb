@@ -1,12 +1,12 @@
 class Citrusglaze < Formula
   desc "AI Security & Observability Platform — MITM proxy for AI API calls"
   homepage "https://citrusglaze.dev"
-  version "0.1.9-beta"
+  version "0.1.10-beta"
   license "FSL-1.1-ALv2"
 
   if Hardware::CPU.arm?
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.9-beta/citrusglaze-v0.1.9-beta-darwin-arm64.tar.gz"
-    sha256 "b7251575373be342b667175db8bc3c14890e965d49795452f3af6759329da0c3"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.10-beta/citrusglaze-v0.1.10-beta-darwin-arm64.tar.gz"
+    sha256 "b4168b6eae38e0c6ed9d362f1a25a7b2e9637c086624254344d2ba901e41d5a8"
   else
     odie "CitrusGlaze currently only supports Apple Silicon (arm64)"
   end
@@ -19,7 +19,11 @@ class Citrusglaze < Formula
     app_zip = "CitrusGlaze-v#{version}-darwin-arm64.app.zip"
     app_url = "https://github.com/citrusglaze/citrusglaze/releases/download/v#{version}/#{app_zip}"
     system "curl", "-fsSL", "-o", "#{buildpath}/#{app_zip}", app_url
-    system "unzip", "-q", "#{buildpath}/#{app_zip}", "-d", "#{buildpath}/app"
+    if File.exist?("#{buildpath}/#{app_zip}")
+      system "unzip", "-q", "#{buildpath}/#{app_zip}", "-d", "#{buildpath}/app"
+    else
+      opoo "Failed to download desktop app — it can be installed later via `citrusglaze setup`"
+    end
 
     # Store the .app in the Cellar so post_install can copy to /Applications
     app_staged = buildpath/"app/CitrusGlaze.app"
@@ -35,15 +39,28 @@ class Citrusglaze < Formula
       end
     end
 
-    # Download and extract Chrome extension to a well-known location
-    # so users can "Load unpacked" once, then just hit Refresh on upgrades.
+    # Download and extract Chrome extension to ~/.citrusglaze/chrome-extension/
+    # Dotfile convention — predictable path, easy to find.
+    # Users "Load unpacked" once, then just hit Refresh on upgrades.
     ext_zip = "citrusglaze-extension-v0.1.2.4.zip"
     ext_url = "https://github.com/citrusglaze/citrusglaze/releases/download/v#{version}/#{ext_zip}"
-    ext_dir = "#{Dir.home}/Library/Application Support/citrusglaze/chrome-extension"
+    ext_dir = "#{Dir.home}/.citrusglaze/chrome-extension"
+    # Migrate from old location if it exists
+    old_ext_dir = "#{Dir.home}/Library/Application Support/citrusglaze/chrome-extension"
+    if File.directory?(old_ext_dir) && !File.directory?(ext_dir)
+      system "mkdir", "-p", "#{Dir.home}/.citrusglaze"
+      system "mv", old_ext_dir, ext_dir
+      ohai "Migrated extension from #{old_ext_dir} → #{ext_dir}"
+    end
     system "curl", "-fsSL", "-o", "#{buildpath}/#{ext_zip}", ext_url
-    system "rm", "-rf", ext_dir
-    system "mkdir", "-p", ext_dir
-    system "unzip", "-q", "-o", "#{buildpath}/#{ext_zip}", "-d", ext_dir
+    if File.exist?("#{buildpath}/#{ext_zip}")
+      system "rm", "-rf", ext_dir
+      system "mkdir", "-p", ext_dir
+      system "unzip", "-q", "-o", "#{buildpath}/#{ext_zip}", "-d", ext_dir
+    else
+      opoo "Failed to download Chrome extension — skipping"
+      system "mkdir", "-p", ext_dir unless File.directory?(ext_dir)
+    end
     # If the zip contains a dist/ subfolder, flatten it
     if File.directory?("#{ext_dir}/dist")
       system "cp", "-R", *Dir["#{ext_dir}/dist/*"], ext_dir
@@ -93,6 +110,25 @@ class Citrusglaze < Formula
       opoo "  https://github.com/citrusglaze/citrusglaze/releases/latest"
     end
 
+    # ── Schedule app launch + Finder open FIRST ──
+    # These run in a deferred background process (sleep 3) so they fire after
+    # Homebrew finishes. Scheduled early so they happen even if later steps
+    # (setup, CA install) fail or hang.
+    deferred_cmds = []
+    if app_dest.exist?
+      deferred_cmds << "open '#{app_dest}'"
+    end
+    ext_dir = "#{Dir.home}/.citrusglaze/chrome-extension"
+    if File.directory?(ext_dir)
+      ohai "In Chrome: Extensions → Load unpacked → select the highlighted folder"
+      deferred_cmds << "open -R '#{ext_dir}'"
+    end
+    unless deferred_cmds.empty?
+      ohai "Will launch app and open extension folder after install completes..."
+      script = "(sleep 3 && #{deferred_cmds.join(' && ')}) &"
+      system "bash", "-c", script
+    end
+
     # ── Remove toxic HTTPS_PROXY/HTTP_PROXY from shell profiles ──
     # Old versions of citrusglaze setup injected these, which breaks Claude Code.
     # Do this in the formula directly so it happens even if setup errors out.
@@ -117,10 +153,16 @@ class Citrusglaze < Formula
     system "launchctl", "unsetenv", "HTTPS_PROXY"
     system "launchctl", "unsetenv", "HTTP_PROXY"
 
-    # Run setup wizard in headless mode first (dirs, CA gen, config, policies, daemon, proxy)
-    # Then do the CA trust ourselves since osascript doesn't work inside brew post_install.
+    # Stop any running daemon so it picks up the new binary on restart.
+    # Harmless on fresh install (nothing to stop).
+    system "pkill", "-f", "citrusglazed"
+    sleep 1
+
+    # Run setup wizard in headless mode (dirs, CA gen, config, policies, daemon, proxy).
+    # --skip-trust: osascript can't show GUI dialogs inside brew post_install, so we
+    # handle CA installation ourselves below via `security add-trusted-cert`.
     ohai "Running CitrusGlaze setup..."
-    system bin/"citrusglaze", "setup", "--headless"
+    system bin/"citrusglaze", "setup", "--headless", "--skip-trust"
 
     # Install CA to login keychain (no admin password needed — works non-interactively)
     ca_pem = "#{Dir.home}/Library/Application Support/citrusglaze/ca.pem"
@@ -128,19 +170,20 @@ class Citrusglaze < Formula
     cert = File.exist?(ca_pem) ? ca_pem : (File.exist?(alt_ca) ? alt_ca : nil)
     if cert
       ohai "Installing CA certificate to login keychain..."
-      system "security", "add-trusted-cert", "-r", "trustRoot",
-             "-k", "#{Dir.home}/Library/Keychains/login.keychain-db", cert
+      if system "security", "add-trusted-cert", "-r", "trustRoot",
+                "-k", "#{Dir.home}/Library/Keychains/login.keychain-db", cert
+        ohai "CA certificate installed successfully"
+      else
+        opoo "CA certificate installation failed. Run manually:"
+        opoo "  citrusglaze setup"
+      end
+    else
+      opoo "CA certificate not found — run `citrusglaze setup` to generate and install it"
     end
 
-    # Set system proxy (PAC) — this needs admin but we try without osascript
+    # Set system proxy (PAC) — needs interactive admin dialog
     ohai "To complete setup (system proxy + System Keychain CA), run in a terminal:"
     ohai "  citrusglaze setup"
-
-    # Launch the desktop app
-    if app_dest.exist?
-      ohai "Launching CitrusGlaze..."
-      system "open", app_dest.to_s
-    end
   end
 
   def caveats
@@ -152,8 +195,9 @@ class Citrusglaze < Formula
       Open it from Spotlight, Launchpad, or: open /Applications/CitrusGlaze.app
 
       Chrome extension extracted to:
-        ~/Library/Application Support/citrusglaze/chrome-extension
+        ~/.citrusglaze/chrome-extension
       Load it once: Chrome → Extensions → Load unpacked → select that folder
+      (Finder opened automatically after install)
       On upgrades, just click Refresh on the extension card.
 
       If setup was interrupted or you skipped a prompt, re-run:
