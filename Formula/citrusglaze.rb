@@ -11,11 +11,7 @@ class Citrusglaze < Formula
     odie "CitrusGlaze currently only supports Apple Silicon (arm64)"
   end
 
-  resource "desktop_app" do
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.12-beta/CitrusGlaze-v0.1.12-beta-darwin-arm64.app.zip"
-    sha256 "db0c51a18177c4fd16354b39e3fd215c98c78ff9787d964f4d19abc68337b102"
-  end
-
+  # Chrome extension staged in Cellar; cask or `citrusglaze setup` copies to ~/.citrusglaze/
   resource "chrome_extension" do
     url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.12-beta/citrusglaze-extension-v0.1.2.4.zip"
     sha256 "3453e8b2068cde90151eb7d8882721abcd79081d0bde055fe8c42a009d90c928"
@@ -25,24 +21,7 @@ class Citrusglaze < Formula
     bin.install "citrusglaze"
     bin.install "citrusglazed"
 
-    # Extract desktop app into Cellar so post_install can copy to /Applications.
-    # Using resource blocks ensures Homebrew handles the download (not blocked by sandbox).
-    resource("desktop_app").stage do
-      app_staged = Pathname.pwd/"CitrusGlaze.app"
-      if app_staged.exist?
-        (prefix/"CitrusGlaze.app").install Dir[app_staged/"*"]
-      else
-        # Fallback: zip extracted Contents/ directly
-        contents_staged = Pathname.pwd/"Contents"
-        if contents_staged.exist?
-          (prefix/"CitrusGlaze.app/Contents").install Dir[contents_staged/"*"]
-        else
-          opoo "Could not find CitrusGlaze.app in archive"
-        end
-      end
-    end
-
-    # Stage extension zip into Cellar; post_install copies to ~/.citrusglaze/
+    # Stage extension in Cellar so the cask's postflight or `citrusglaze setup` can copy it
     resource("chrome_extension").stage do
       (prefix/"chrome-extension").install Dir["*"]
     end
@@ -68,77 +47,6 @@ class Citrusglaze < Formula
     (var/"log/citrusglaze").mkpath
     (var/"run/citrusglaze").mkpath
 
-    # ── Copy .app from Cellar to /Applications ──
-    app_source = prefix/"CitrusGlaze.app"
-    app_dest = Pathname.new("/Applications/CitrusGlaze.app")
-
-    if app_source.exist? && (app_source/"Contents/MacOS/citrusglaze-app").exist?
-      ohai "Installing CitrusGlaze.app to /Applications..."
-      system "rm", "-rf", app_dest.to_s
-      system "cp", "-R", app_source.to_s, app_dest.to_s
-
-      if app_dest.exist?
-        # Strip quarantine flag so Gatekeeper doesn't block the unsigned app
-        system "xattr", "-cr", app_dest.to_s
-        system "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister", "-f", app_dest.to_s
-        ohai "Desktop app installed to /Applications"
-      else
-        opoo "Failed to copy app to /Applications. Run manually:"
-        opoo "  cp -R #{app_source} /Applications/"
-      end
-    else
-      opoo "Desktop app not found in Cellar — download manually from:"
-      opoo "  https://github.com/citrusglaze/citrusglaze/releases/latest"
-    end
-
-    # ── Copy Chrome extension from Cellar to ~/.citrusglaze/ ──
-    ext_source = prefix/"chrome-extension"
-    ext_dir = "#{Dir.home}/.citrusglaze/chrome-extension"
-    # Migrate from old location if it exists
-    old_ext_dir = "#{Dir.home}/Library/Application Support/citrusglaze/chrome-extension"
-    if File.directory?(old_ext_dir) && !File.directory?(ext_dir)
-      system "mkdir", "-p", "#{Dir.home}/.citrusglaze"
-      system "mv", old_ext_dir, ext_dir
-      ohai "Migrated extension from #{old_ext_dir} → #{ext_dir}"
-    end
-    if ext_source.exist?
-      # Atomic swap so Chrome doesn't see a missing extension during reinstall
-      ext_tmp = "#{ext_dir}.new"
-      system "rm", "-rf", ext_tmp
-      system "mkdir", "-p", ext_tmp
-      system "cp", "-R", *Dir[ext_source/"*"], ext_tmp
-      # If the zip contained a dist/ subfolder, flatten it
-      if File.directory?("#{ext_tmp}/dist")
-        system "cp", "-R", *Dir["#{ext_tmp}/dist/*"], ext_tmp
-        system "rm", "-rf", "#{ext_tmp}/dist"
-      end
-      system "rm", "-rf", "#{ext_dir}.old"
-      system "mv", ext_dir, "#{ext_dir}.old" if File.directory?(ext_dir)
-      system "mv", ext_tmp, ext_dir
-      system "rm", "-rf", "#{ext_dir}.old"
-      ohai "Chrome extension installed to #{ext_dir}"
-    else
-      opoo "Chrome extension not found in Cellar"
-      system "mkdir", "-p", ext_dir unless File.directory?(ext_dir)
-    end
-
-    # ── Schedule app launch + Finder open FIRST ──
-    # Deferred background process fires after Homebrew finishes, even if later
-    # steps (setup, CA install) fail or hang.
-    deferred_cmds = []
-    if app_dest.exist?
-      deferred_cmds << "open '#{app_dest}'"
-    end
-    if File.directory?(ext_dir) && !Dir.empty?(ext_dir)
-      ohai "In Chrome: Extensions → Load unpacked → select the highlighted folder"
-      deferred_cmds << "open -R '#{ext_dir}'"
-    end
-    unless deferred_cmds.empty?
-      ohai "Will launch app and open extension folder after install completes..."
-      script = "(sleep 3 && #{deferred_cmds.join(' && ')}) &"
-      system "bash", "-c", script
-    end
-
     # ── Remove toxic HTTPS_PROXY/HTTP_PROXY from shell profiles ──
     for profile in [
       "#{Dir.home}/.zshrc",
@@ -160,9 +68,8 @@ class Citrusglaze < Formula
     system "launchctl", "unsetenv", "HTTPS_PROXY"
     system "launchctl", "unsetenv", "HTTP_PROXY"
 
-    # ── Stop old daemon, run setup, install CA ──
+    # ── Stop old daemon, run setup ──
     system "pkill", "-f", "citrusglazed"
-    # Wait for daemon to fully exit (up to 5s) before starting a new one
     5.times do
       break unless quiet_system("pgrep", "-qf", "citrusglazed")
       sleep 1
@@ -188,8 +95,7 @@ class Citrusglaze < Formula
       opoo "CA certificate not found — run `citrusglaze setup` to generate and install it"
     end
 
-    # Configure PAC proxy (only AI traffic routed through CitrusGlaze).
-    # Try direct first (no admin needed on some macOS versions).
+    # Configure PAC proxy
     pac_url = "http://127.0.0.1:8888/proxy.pac"
     iface = `networksetup -listallnetworkservices 2>/dev/null`.lines
               .reject { |l| l.start_with?("An asterisk") || l.strip.empty? }
@@ -204,24 +110,18 @@ class Citrusglaze < Formula
 
   def caveats
     <<~EOS
-      Setup complete! Verify with:
+      CLI + daemon installed. To add the desktop app and Chrome extension:
+        brew install --cask citrusglaze/citrusglaze/citrusglaze-app
+
+      Verify setup:
         citrusglaze status
-
-      Desktop app installed to /Applications/CitrusGlaze.app
-      Open it from Spotlight, Launchpad, or: open /Applications/CitrusGlaze.app
-
-      Chrome extension extracted to:
-        ~/.citrusglaze/chrome-extension
-      Load it once: Chrome → Extensions → Load unpacked → select that folder
-      (Finder opened automatically after install)
-      On upgrades, just click Refresh on the extension card.
-
-      If setup was interrupted or you skipped a prompt, re-run:
-        citrusglaze setup
 
       Protect an AI tool:
         citrusglaze wrap claude
         citrusglaze wrap python my_agent.py
+
+      If setup was interrupted or you skipped a prompt, re-run:
+        citrusglaze setup
 
       Search all AI conversations (add to .mcp.json):
         {"mcpServers":{"citrusglaze-recall":{"command":"citrusglaze","args":["mcp-server"]}}}
