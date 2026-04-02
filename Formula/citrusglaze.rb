@@ -1,23 +1,23 @@
 class Citrusglaze < Formula
   desc "AI Security & Observability Platform — MITM proxy for AI API calls"
   homepage "https://citrusglaze.dev"
-  version "0.1.10-beta"
+  version "0.1.11-beta"
   license "FSL-1.1-ALv2"
 
   if Hardware::CPU.arm?
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.10-beta/citrusglaze-v0.1.10-beta-darwin-arm64.tar.gz"
-    sha256 "b4168b6eae38e0c6ed9d362f1a25a7b2e9637c086624254344d2ba901e41d5a8"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.11-beta/citrusglaze-v0.1.11-beta-darwin-arm64.tar.gz"
+    sha256 "f39a76d7d98e2036717f8c39bd8c74bddaf866f9caa311451e8e2c398a7f3776"
   else
     odie "CitrusGlaze currently only supports Apple Silicon (arm64)"
   end
 
   resource "desktop_app" do
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.10-beta/CitrusGlaze-v0.1.10-beta-darwin-arm64.app.zip"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.11-beta/CitrusGlaze-v0.1.11-beta-darwin-arm64.app.zip"
     sha256 "db0c51a18177c4fd16354b39e3fd215c98c78ff9787d964f4d19abc68337b102"
   end
 
   resource "chrome_extension" do
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.10-beta/citrusglaze-extension-v0.1.2.4.zip"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.11-beta/citrusglaze-extension-v0.1.2.4.zip"
     sha256 "3453e8b2068cde90151eb7d8882721abcd79081d0bde055fe8c42a009d90c928"
   end
 
@@ -78,6 +78,8 @@ class Citrusglaze < Formula
       system "cp", "-R", app_source.to_s, app_dest.to_s
 
       if app_dest.exist?
+        # Strip quarantine flag so Gatekeeper doesn't block the unsigned app
+        system "xattr", "-cr", app_dest.to_s
         system "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister", "-f", app_dest.to_s
         ohai "Desktop app installed to /Applications"
       else
@@ -100,14 +102,20 @@ class Citrusglaze < Formula
       ohai "Migrated extension from #{old_ext_dir} → #{ext_dir}"
     end
     if ext_source.exist?
-      system "rm", "-rf", ext_dir
-      system "mkdir", "-p", ext_dir
-      system "cp", "-R", *Dir[ext_source/"*"], ext_dir
+      # Atomic swap so Chrome doesn't see a missing extension during reinstall
+      ext_tmp = "#{ext_dir}.new"
+      system "rm", "-rf", ext_tmp
+      system "mkdir", "-p", ext_tmp
+      system "cp", "-R", *Dir[ext_source/"*"], ext_tmp
       # If the zip contained a dist/ subfolder, flatten it
-      if File.directory?("#{ext_dir}/dist")
-        system "cp", "-R", *Dir["#{ext_dir}/dist/*"], ext_dir
-        system "rm", "-rf", "#{ext_dir}/dist"
+      if File.directory?("#{ext_tmp}/dist")
+        system "cp", "-R", *Dir["#{ext_tmp}/dist/*"], ext_tmp
+        system "rm", "-rf", "#{ext_tmp}/dist"
       end
+      system "rm", "-rf", "#{ext_dir}.old"
+      system "mv", ext_dir, "#{ext_dir}.old" if File.directory?(ext_dir)
+      system "mv", ext_tmp, ext_dir
+      system "rm", "-rf", "#{ext_dir}.old"
       ohai "Chrome extension installed to #{ext_dir}"
     else
       opoo "Chrome extension not found in Cellar"
@@ -154,7 +162,11 @@ class Citrusglaze < Formula
 
     # ── Stop old daemon, run setup, install CA ──
     system "pkill", "-f", "citrusglazed"
-    sleep 1
+    # Wait for daemon to fully exit (up to 5s) before starting a new one
+    5.times do
+      break unless quiet_system("pgrep", "-qf", "citrusglazed")
+      sleep 1
+    end
 
     ohai "Running CitrusGlaze setup..."
     system bin/"citrusglaze", "setup", "--headless", "--skip-trust"
@@ -176,8 +188,18 @@ class Citrusglaze < Formula
       opoo "CA certificate not found — run `citrusglaze setup` to generate and install it"
     end
 
-    ohai "To complete setup (system proxy + System Keychain CA), run:"
-    ohai "  citrusglaze setup"
+    # Configure PAC proxy (only AI traffic routed through CitrusGlaze).
+    # Try direct first (no admin needed on some macOS versions).
+    pac_url = "http://127.0.0.1:8888/proxy.pac"
+    iface = `networksetup -listallnetworkservices 2>/dev/null`.lines
+              .reject { |l| l.start_with?("An asterisk") || l.strip.empty? }
+              .map(&:strip).first || "Wi-Fi"
+    if system "networksetup", "-setautoproxyurl", iface, pac_url
+      ohai "PAC proxy configured on #{iface} → #{pac_url}"
+    else
+      ohai "To complete setup (system proxy), run in a terminal:"
+      ohai "  citrusglaze setup"
+    end
   end
 
   def caveats
@@ -200,9 +222,6 @@ class Citrusglaze < Formula
       Protect an AI tool:
         citrusglaze wrap claude
         citrusglaze wrap python my_agent.py
-
-      Start daemon on login:
-        brew services start citrusglaze
 
       Search all AI conversations (add to .mcp.json):
         {"mcpServers":{"citrusglaze-recall":{"command":"citrusglaze","args":["mcp-server"]}}}
