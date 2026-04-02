@@ -1,6 +1,6 @@
 cask "citrusglaze-app" do
-  version "0.1.12-beta"
-  sha256 "db0c51a18177c4fd16354b39e3fd215c98c78ff9787d964f4d19abc68337b102"
+  version "0.1.13-beta"
+  sha256 "dd900fbe59ae899e24edcc44bdeca931721c440e90531223077377e6cde4e2e4"
 
   url "https://github.com/citrusglaze/citrusglaze/releases/download/v#{version}/CitrusGlaze-v#{version}-darwin-arm64.app.zip"
   name "CitrusGlaze"
