@@ -35,24 +35,27 @@ cask "citrusglaze-app" do
     brew = "#{HOMEBREW_PREFIX}/bin/brew"
     system_command brew, args: ["services", "start", "citrusglaze/citrusglaze/citrusglaze"]
 
-    # Wait for daemon socket to appear
-    10.times do
-      break if File.exist?("/tmp/citrusglaze/daemon.sock")
-      sleep 1
+    # Wait for daemon to be fully ready (socket exists + responding to gRPC)
+    citrusglaze = "#{HOMEBREW_PREFIX}/bin/citrusglaze"
+    ready = false
+    15.times do
+      sleep 2
+      if File.exist?("/tmp/citrusglaze/daemon.sock")
+        result = system_command citrusglaze, args: ["start"], print_stderr: false, must_succeed: false
+        if result.exit_status == 0
+          ready = true
+          break
+        end
+      end
     end
 
-    # Nudge proxy start and configure PAC proxy
-    if File.exist?("/tmp/citrusglaze/daemon.sock")
-      citrusglaze = "#{HOMEBREW_PREFIX}/bin/citrusglaze"
-      system_command citrusglaze, args: ["start"] if File.exist?(citrusglaze)
-      sleep 2
-
-      # Configure PAC proxy on first active interface
+    # Configure PAC proxy if daemon is up
+    if ready
       pac_url = "http://127.0.0.1:8888/proxy.pac"
       iface = `networksetup -listallnetworkservices 2>/dev/null`.lines
                 .reject { |l| l.start_with?("An asterisk") || l.strip.empty? }
                 .map(&:strip).first || "Wi-Fi"
-      system_command "networksetup", args: ["-setautoproxyurl", iface, pac_url]
+      system_command "networksetup", args: ["-setautoproxyurl", iface, pac_url], must_succeed: false
     end
 
     # ── Open the app and extension folder ──
