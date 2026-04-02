@@ -68,74 +68,31 @@ class Citrusglaze < Formula
     quiet_system "launchctl", "unsetenv", "HTTPS_PROXY"
     quiet_system "launchctl", "unsetenv", "HTTP_PROXY"
 
-    # ── Stop any old daemon before starting the service ──
-    quiet_system "pkill", "-f", "citrusglazed"
-    5.times do
-      break unless quiet_system("pgrep", "-qf", "citrusglazed")
-      sleep 1
-    end
-
-    # ── Generate CA + config (don't start daemon — brew services handles that) ──
-    # Run setup in headless mode, skip trust (we handle CA below), skip daemon start.
+    # ── Generate CA + config (no daemon start — sandbox kills processes) ──
     # Setup creates dirs, generates CA, writes config, copies policies.
-    ohai "Running CitrusGlaze setup..."
-    system bin/"citrusglaze", "setup", "--headless", "--skip-trust"
-    # Setup may fail to start daemon inside sandbox — that's expected.
-    # brew services will start it properly below.
+    # Daemon start + proxy + PAC are handled by the cask's postflight (not sandboxed).
+    quiet_system "pkill", "-f", "citrusglazed"
+    ohai "Running CitrusGlaze setup (directories, CA, config, policies)..."
+    quiet_system bin/"citrusglaze", "setup", "--headless", "--skip-trust"
 
-    # Install CA to login keychain (no admin needed, not sandboxed)
+    # Install CA to login keychain (no admin needed)
     ca_pem = "#{Dir.home}/Library/Application Support/citrusglaze/ca.pem"
     alt_ca = "#{Dir.home}/.local/share/citrusglaze/ca.pem"
     cert = File.exist?(ca_pem) ? ca_pem : (File.exist?(alt_ca) ? alt_ca : nil)
     if cert
       ohai "Installing CA certificate to login keychain..."
-      # quiet_system so a failure doesn't abort post_install
       if quiet_system "security", "add-trusted-cert", "-r", "trustRoot",
                       "-k", "#{Dir.home}/Library/Keychains/login.keychain-db", cert
         ohai "CA certificate installed successfully"
       else
-        opoo "CA certificate installation failed. Run manually:"
-        opoo "  citrusglaze setup"
+        opoo "CA certificate installation failed. Run: citrusglaze setup"
       end
     else
       opoo "CA certificate not found — run `citrusglaze setup` to generate and install it"
     end
 
-    # ── Start daemon via brew services (proper launchd, survives post_install sandbox) ──
-    ohai "Starting CitrusGlaze daemon..."
-    quiet_system "brew", "services", "start", "citrusglaze/citrusglaze/citrusglaze"
-
-    # Wait for daemon to be ready
-    ready = false
-    10.times do
-      sleep 1
-      if File.exist?("/tmp/citrusglaze/daemon.sock")
-        ready = true
-        break
-      end
-    end
-
-    if ready
-      ohai "Daemon started successfully"
-
-      # Ensure proxy is started (daemon auto-starts it, but give it a nudge via gRPC)
-      quiet_system bin/"citrusglaze", "start"
-      sleep 2
-
-      # Configure PAC proxy now that daemon is listening
-      pac_url = "http://127.0.0.1:8888/proxy.pac"
-      iface = `networksetup -listallnetworkservices 2>/dev/null`.lines
-                .reject { |l| l.start_with?("An asterisk") || l.strip.empty? }
-                .map(&:strip).first || "Wi-Fi"
-      if quiet_system "networksetup", "-setautoproxyurl", iface, pac_url
-        ohai "PAC proxy configured on #{iface} → #{pac_url}"
-      else
-        ohai "To configure system proxy, run: citrusglaze setup"
-      end
-    else
-      opoo "Daemon did not start in time. Start manually:"
-      opoo "  brew services start citrusglaze"
-    end
+    # NOTE: Daemon is NOT started here — post_install is sandboxed and kills processes on exit.
+    # The cask postflight starts the daemon, or user runs: brew services start citrusglaze
   end
 
   def caveats
