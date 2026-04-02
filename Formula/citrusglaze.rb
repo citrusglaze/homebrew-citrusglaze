@@ -118,6 +118,10 @@ class Citrusglaze < Formula
     if ready
       ohai "Daemon started successfully"
 
+      # Ensure proxy is started (daemon auto-starts it, but give it a nudge via gRPC)
+      quiet_system bin/"citrusglaze", "start"
+      sleep 2
+
       # Configure PAC proxy now that daemon is listening
       pac_url = "http://127.0.0.1:8888/proxy.pac"
       iface = `networksetup -listallnetworkservices 2>/dev/null`.lines
