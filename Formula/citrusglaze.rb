@@ -68,17 +68,22 @@ class Citrusglaze < Formula
     system "launchctl", "unsetenv", "HTTPS_PROXY"
     system "launchctl", "unsetenv", "HTTP_PROXY"
 
-    # ── Stop old daemon, run setup ──
+    # ── Stop any old daemon before starting the service ──
     system "pkill", "-f", "citrusglazed"
     5.times do
       break unless quiet_system("pgrep", "-qf", "citrusglazed")
       sleep 1
     end
 
+    # ── Generate CA + config (don't start daemon — brew services handles that) ──
+    # Run setup in headless mode, skip trust (we handle CA below), skip daemon start.
+    # Setup creates dirs, generates CA, writes config, copies policies.
     ohai "Running CitrusGlaze setup..."
     system bin/"citrusglaze", "setup", "--headless", "--skip-trust"
+    # Setup may fail to start daemon inside sandbox — that's expected.
+    # brew services will start it properly below.
 
-    # Install CA to login keychain (no admin needed)
+    # Install CA to login keychain (no admin needed, not sandboxed)
     ca_pem = "#{Dir.home}/Library/Application Support/citrusglaze/ca.pem"
     alt_ca = "#{Dir.home}/.local/share/citrusglaze/ca.pem"
     cert = File.exist?(ca_pem) ? ca_pem : (File.exist?(alt_ca) ? alt_ca : nil)
@@ -95,23 +100,43 @@ class Citrusglaze < Formula
       opoo "CA certificate not found — run `citrusglaze setup` to generate and install it"
     end
 
-    # Configure PAC proxy
-    pac_url = "http://127.0.0.1:8888/proxy.pac"
-    iface = `networksetup -listallnetworkservices 2>/dev/null`.lines
-              .reject { |l| l.start_with?("An asterisk") || l.strip.empty? }
-              .map(&:strip).first || "Wi-Fi"
-    if system "networksetup", "-setautoproxyurl", iface, pac_url
-      ohai "PAC proxy configured on #{iface} → #{pac_url}"
+    # ── Start daemon via brew services (proper launchd, survives post_install sandbox) ──
+    ohai "Starting CitrusGlaze daemon..."
+    system "brew", "services", "start", "citrusglaze/citrusglaze/citrusglaze"
+
+    # Wait for daemon to be ready
+    ready = false
+    10.times do
+      sleep 1
+      if File.exist?("/tmp/citrusglaze/daemon.sock")
+        ready = true
+        break
+      end
+    end
+
+    if ready
+      ohai "Daemon started successfully"
+
+      # Configure PAC proxy now that daemon is listening
+      pac_url = "http://127.0.0.1:8888/proxy.pac"
+      iface = `networksetup -listallnetworkservices 2>/dev/null`.lines
+                .reject { |l| l.start_with?("An asterisk") || l.strip.empty? }
+                .map(&:strip).first || "Wi-Fi"
+      if system "networksetup", "-setautoproxyurl", iface, pac_url
+        ohai "PAC proxy configured on #{iface} → #{pac_url}"
+      else
+        ohai "To configure system proxy, run: citrusglaze setup"
+      end
     else
-      ohai "To complete setup (system proxy), run in a terminal:"
-      ohai "  citrusglaze setup"
+      opoo "Daemon did not start in time. Start manually:"
+      opoo "  brew services start citrusglaze"
     end
   end
 
   def caveats
     <<~EOS
       CLI + daemon installed. To add the desktop app and Chrome extension:
-        brew install --cask citrusglaze/citrusglaze/citrusglaze-app
+        brew install --cask citrusglaze-app
 
       Verify setup:
         citrusglaze status
