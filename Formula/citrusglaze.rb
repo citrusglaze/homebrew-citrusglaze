@@ -1,23 +1,23 @@
 class Citrusglaze < Formula
   desc "AI Security & Observability Platform — MITM proxy for AI API calls"
   homepage "https://citrusglaze.dev"
-  version "0.1.11-beta"
+  version "0.1.12-beta"
   license "FSL-1.1-ALv2"
 
   if Hardware::CPU.arm?
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.11-beta/citrusglaze-v0.1.11-beta-darwin-arm64.tar.gz"
-    sha256 "f39a76d7d98e2036717f8c39bd8c74bddaf866f9caa311451e8e2c398a7f3776"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.12-beta/citrusglaze-v0.1.12-beta-darwin-arm64.tar.gz"
+    sha256 "f1f3bc7642b7d93abe04a11d854cb69bf2468c5024376c80dfe15b9da431ce1b"
   else
     odie "CitrusGlaze currently only supports Apple Silicon (arm64)"
   end
 
   resource "desktop_app" do
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.11-beta/CitrusGlaze-v0.1.11-beta-darwin-arm64.app.zip"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.12-beta/CitrusGlaze-v0.1.12-beta-darwin-arm64.app.zip"
     sha256 "db0c51a18177c4fd16354b39e3fd215c98c78ff9787d964f4d19abc68337b102"
   end
 
   resource "chrome_extension" do
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.11-beta/citrusglaze-extension-v0.1.2.4.zip"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.12-beta/citrusglaze-extension-v0.1.2.4.zip"
     sha256 "3453e8b2068cde90151eb7d8882721abcd79081d0bde055fe8c42a009d90c928"
   end
 
