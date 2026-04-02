@@ -28,6 +28,9 @@ cask "citrusglaze-app" do
       end
     end
 
+    # Strip quarantine so Gatekeeper doesn't block the unsigned app
+    system_command "xattr", args: ["-cr", "/Applications/CitrusGlaze.app"]
+
     # Open the app
     system_command "open", args: ["/Applications/CitrusGlaze.app"]
 
