@@ -32,7 +32,8 @@ cask "citrusglaze-app" do
     system_command "xattr", args: ["-cr", "/Applications/CitrusGlaze.app"]
 
     # ── Start daemon via brew services (cask postflight is NOT sandboxed) ──
-    system_command "brew", args: ["services", "start", "citrusglaze/citrusglaze/citrusglaze"]
+    brew = "#{HOMEBREW_PREFIX}/bin/brew"
+    system_command brew, args: ["services", "start", "citrusglaze/citrusglaze/citrusglaze"]
 
     # Wait for daemon socket to appear
     10.times do
