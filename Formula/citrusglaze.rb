@@ -1,19 +1,19 @@
 class Citrusglaze < Formula
   desc "AI Security & Observability Platform — MITM proxy for AI API calls"
   homepage "https://citrusglaze.dev"
-  version "0.2.3-experimental"
+  version "0.2.4-experimental"
   license "FSL-1.1-ALv2"
 
   if Hardware::CPU.arm?
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.2.3-experimental/citrusglaze-v0.2.3-experimental-darwin-arm64.tar.gz"
-    sha256 "ad82bde7c3af590da04eb7019581fb0ef03f8a7e2e679ff301c45bd807ba31b4"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.2.4-experimental/citrusglaze-v0.2.4-experimental-darwin-arm64.tar.gz"
+    sha256 "253b3b5bede66a4919ea8374b4cae35264bfc7385a586c5fc68d17b768fb034d"
   else
     odie "CitrusGlaze currently only supports Apple Silicon (arm64)"
   end
 
   # Chrome extension staged in Cellar; cask or `citrusglaze setup` copies to ~/.citrusglaze/
   resource "chrome_extension" do
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.2.3-experimental/citrusglaze-extension-v0.1.2.4.zip"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.2.4-experimental/citrusglaze-extension-v0.1.2.4.zip"
     sha256 "3d6233d6f8371109bc0c527021a7f553d50935745dbada70eaf101ef2491fc64"
   end
 
