@@ -1,25 +1,30 @@
 class Citrusglaze < Formula
   desc "AI Security & Observability Platform — MITM proxy for AI API calls"
   homepage "https://citrusglaze.dev"
-  version "0.1.15-beta"
+  version "0.2.1-experimental"
   license "FSL-1.1-ALv2"
 
   if Hardware::CPU.arm?
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.15-beta/citrusglaze-v0.1.15-beta-darwin-arm64.tar.gz"
-    sha256 "81c4d49645e79eeadb590086202392a40f6770a2961ceeef4eb40920a8b143d6"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.2.1-experimental/citrusglaze-v0.2.1-experimental-darwin-arm64.tar.gz"
+    sha256 "6733a74bc2af704c8952b2637f09005d0e6817363a33046b09a70bcd0559c28e"
   else
     odie "CitrusGlaze currently only supports Apple Silicon (arm64)"
   end
 
   # Chrome extension staged in Cellar; cask or `citrusglaze setup` copies to ~/.citrusglaze/
   resource "chrome_extension" do
-    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.1.15-beta/citrusglaze-extension-v0.1.2.4.zip"
+    url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.2.1-experimental/citrusglaze-extension-v0.1.2.4.zip"
     sha256 "3453e8b2068cde90151eb7d8882721abcd79081d0bde055fe8c42a009d90c928"
   end
 
   def install
     bin.install "citrusglaze"
+    bin.install "cg"
     bin.install "citrusglazed"
+    bin.install "citrusglaze-pf-helper"
+
+    # Ship the LaunchDaemon plist so setup.rs can find and install it
+    (share/"citrusglaze").install "com.citrusglaze.pf-helper.plist"
 
     # Stage extension in Cellar so the cask's postflight or `citrusglaze setup` can copy it
     resource("chrome_extension").stage do
@@ -70,7 +75,7 @@ class Citrusglaze < Formula
 
     # ── Generate CA + config (no daemon start — sandbox kills processes) ──
     # Setup creates dirs, generates CA, writes config, copies policies.
-    # Daemon start + proxy + PAC are handled by the cask's postflight (not sandboxed).
+    # Daemon start + PF helper install are handled by the cask's postflight (not sandboxed).
     quiet_system "pkill", "-f", "citrusglazed"
     ohai "Running CitrusGlaze setup (directories, CA, config, policies)..."
     quiet_system bin/"citrusglaze", "setup", "--headless", "--skip-trust"
@@ -100,10 +105,17 @@ class Citrusglaze < Formula
       CLI + daemon installed. To add the desktop app and Chrome extension:
         brew install --cask citrusglaze-app
 
+      First-time setup (installs CA, PF helper, starts daemon):
+        citrusglaze setup
+
+      The setup wizard will prompt once for your admin password to install the
+      kernel-level network security helper. This helper intercepts AI traffic
+      at the OS level — no proxy env vars needed, works with any app.
+
       Verify setup:
         citrusglaze status
 
-      Protect an AI tool:
+      Protect an AI tool with full sandboxing:
         citrusglaze wrap claude
         citrusglaze wrap python my_agent.py
 
