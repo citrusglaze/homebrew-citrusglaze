@@ -14,7 +14,7 @@ class Citrusglaze < Formula
   # Chrome extension staged in Cellar; cask or `citrusglaze setup` copies to ~/.citrusglaze/
   resource "chrome_extension" do
     url "https://github.com/citrusglaze/citrusglaze/releases/download/v0.2.1-experimental/citrusglaze-extension-v0.1.2.4.zip"
-    sha256 "3453e8b2068cde90151eb7d8882721abcd79081d0bde055fe8c42a009d90c928"
+    sha256 "3d6233d6f8371109bc0c527021a7f553d50935745dbada70eaf101ef2491fc64"
   end
 
   def install
